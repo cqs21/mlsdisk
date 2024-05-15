@@ -18,7 +18,7 @@ use core::{
     fmt,
     hash::{Hash, Hasher},
     marker::{PhantomData, Tuple, Unsize},
-    mem::SizedTypeProperties,
+    mem::{MaybeUninit, SizedTypeProperties},
     ops::{CoerceUnsized, Deref, DerefMut, DispatchFromDyn, Receiver},
     pin::Pin,
     ptr::NonNull,
@@ -1024,6 +1024,19 @@ impl<T> Arc<T> {
         }
     }
 
+    /// Constructs a new `Arc` with uninitialized contents.
+    pub fn new_uninit() -> Arc<MaybeUninit<T>> {
+        Arc {
+            inner: KArc::<T>::try_new_uninit().unwrap(),
+        }
+    }
+
+    /// Returns a mutable reference into the given `Arc`, if there are
+    /// no other `Arc` or `Weak` pointers to the same allocation.
+    pub fn get_mut(this: &mut Self) -> Option<&mut T> {
+        KArc::get_mut(&mut this.inner)
+    }
+
     /// Constructs a new `Arc<T>` while giving you a `Weak<T>` to the allocation,
     /// to allow you to construct a `T` which holds a weak pointer to itself.
     pub fn new_cyclic<F>(data_fn: F) -> Self
@@ -1048,6 +1061,21 @@ impl<T> Arc<T> {
     /// Gets the number of `Weak` pointers to this allocation.
     pub fn weak_count(this: &Self) -> usize {
         KArc::weak_count(&this.inner)
+    }
+}
+
+impl<T> Arc<MaybeUninit<T>> {
+    /// Converts to `Arc<T>`.
+    ///
+    /// # Safety
+    ///
+    /// As with `MaybeUninit::assume_init`,
+    /// it is up to the caller to guarantee that the inner value
+    /// really is in an initialized state.
+    pub unsafe fn assume_init(self) -> Arc<T> {
+        Arc {
+            inner: self.inner.assume_init(),
+        }
     }
 }
 

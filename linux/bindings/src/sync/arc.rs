@@ -4,12 +4,14 @@
 
 //! A reference-counted pointer.
 
-use alloc::boxed::Box;
+use alloc::{
+    alloc::{AllocError, Allocator, Global, Layout},
+    boxed::Box,
+};
 use core::{
-    alloc::{AllocError, Allocator, Layout},
     fmt,
     marker::{PhantomData, Unsize},
-    mem::MaybeUninit,
+    mem::{ManuallyDrop, MaybeUninit},
     ops::{Deref, DerefMut},
     ptr::{addr_of_mut, NonNull},
 };
@@ -163,6 +165,15 @@ struct ArcInner<T: ?Sized> {
     data: T,
 }
 
+/// Calculate layout for `ArcInner<T>` using the inner value's layout
+fn arcinner_layout_for_value_layout(layout: Layout) -> Layout {
+    Layout::new::<ArcInner<()>>()
+        .extend(layout)
+        .unwrap()
+        .0
+        .pad_to_align()
+}
+
 // This is to allow [`Arc`] (and variants) to be used as the type of `self`.
 impl<T: ?Sized> core::ops::Receiver for Arc<T> {}
 
@@ -254,6 +265,18 @@ impl<T> Arc<T> {
         core::mem::forget(weak);
         Ok(strong)
     }
+
+    /// Constructs a new `Arc` with uninitialized contents, returning an error
+    /// if allocation fails.
+    pub fn try_new_uninit() -> Result<Arc<MaybeUninit<T>>, AllocError> {
+        unsafe {
+            Ok(Arc::from_ptr(Arc::try_allocate_for_layout(
+                Layout::new::<T>(),
+                |layout| Global.allocate(layout),
+                <*mut u8>::cast,
+            )?))
+        }
+    }
 }
 
 impl<T: ?Sized> Arc<T> {
@@ -269,6 +292,52 @@ impl<T: ?Sized> Arc<T> {
             ptr: inner,
             _p: PhantomData,
         }
+    }
+
+    /// Constructs a new [`Arc`] from a pointer.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `inner` points to a valid location and
+    /// has a non-zero reference count.
+    unsafe fn from_ptr(ptr: *mut ArcInner<T>) -> Self {
+        Arc::from_inner(NonNull::new_unchecked(ptr))
+    }
+
+    /// Allocates an `ArcInner<T>` with sufficient space for
+    /// a possibly-unsized inner value where the value has the layout provided,
+    /// returning an error if allocation fails.
+    ///
+    /// The function `mem_to_arcinner` is called with the data pointer
+    /// and must return back a (potentially fat)-pointer for the `ArcInner<T>`.
+    unsafe fn try_allocate_for_layout(
+        value_layout: Layout,
+        allocate: impl FnOnce(Layout) -> Result<NonNull<[u8]>, AllocError>,
+        mem_to_arcinner: impl FnOnce(*mut u8) -> *mut ArcInner<T>,
+    ) -> Result<*mut ArcInner<T>, AllocError> {
+        let layout = arcinner_layout_for_value_layout(value_layout);
+
+        let ptr = allocate(layout)?;
+
+        let inner = unsafe { Self::initialize_arcinner(ptr, layout, mem_to_arcinner) };
+
+        Ok(inner)
+    }
+
+    unsafe fn initialize_arcinner(
+        ptr: NonNull<[u8]>,
+        layout: Layout,
+        mem_to_arcinner: impl FnOnce(*mut u8) -> *mut ArcInner<T>,
+    ) -> *mut ArcInner<T> {
+        let inner = mem_to_arcinner(ptr.as_non_null_ptr().as_ptr());
+        debug_assert_eq!(unsafe { Layout::for_value_raw(inner) }, layout);
+
+        unsafe {
+            addr_of_mut!((*inner).strong).write(Opaque::new(crate::REFCOUNT_INIT(1)));
+            addr_of_mut!((*inner).weak).write(Opaque::new(crate::REFCOUNT_INIT(1)));
+        }
+
+        inner
     }
 
     /// Compare whether two [`Arc`] pointers reference the same underlying object.
@@ -310,12 +379,38 @@ impl<T: ?Sized> Arc<T> {
         }
     }
 
+    /// Returns a mutable reference into the given `Arc`, if there are
+    /// no other `Arc` or `Weak` pointers to the same allocation.
+    pub fn get_mut(this: &mut Self) -> Option<&mut T> {
+        if Arc::weak_count(this) == 0 && Arc::strong_count(this) == 1 {
+            // It it guaranteed that the pointer returned is the *only* pointer
+            // that will ever be returned to T.
+            unsafe { Some(Arc::get_mut_unchecked(this)) }
+        } else {
+            None
+        }
+    }
+
     /// Returns a mutable reference into the given `Arc`,
     /// without any check.
     unsafe fn get_mut_unchecked(this: &mut Self) -> &mut T {
         // We are careful to *not* create a reference covering the "count" fields, as
         // this would alias with concurrent access to the reference counts (e.g. by `Weak`).
         unsafe { &mut (*this.ptr.as_ptr()).data }
+    }
+}
+
+impl<T> Arc<MaybeUninit<T>> {
+    /// Converts to `Arc<T>`.
+    ///
+    /// # Safety
+    ///
+    /// As with `MaybeUninit::assume_init`,
+    /// it is up to the caller to guarantee that the inner value
+    /// really is in an initialized state.
+    pub unsafe fn assume_init(self) -> Arc<T> {
+        let this = ManuallyDrop::new(self);
+        Arc::from_ptr(this.ptr.as_ptr().cast())
     }
 }
 
