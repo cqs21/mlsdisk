@@ -259,11 +259,12 @@ impl<L: BlockLog> CryptoLog<L> {
         let data_nodes: Vec<Arc<DataNode>> = buf
             .iter()
             .map(|block_buf| {
-                let data_node = {
-                    let mut node = DataNode::new_uninit();
-                    node.0.copy_from_slice(block_buf.as_slice());
-                    Arc::new(node)
-                };
+                let data_node = Arc::<DataNode>::new_uninit();
+                // SAFETY: `data_node` will be initialized right below.
+                let mut data_node = unsafe { data_node.assume_init() };
+                let node_ref = Arc::get_mut(&mut data_node).unwrap();
+                node_ref.0.copy_from_slice(block_buf.as_slice());
+
                 data_node
             })
             .collect();
@@ -533,13 +534,19 @@ impl<L: BlockLog> MhtStorage<L> {
             })?);
         }
 
-        let mht_node = {
-            let mut cipher = self.crypt_buf.cipher.borrow_mut();
-            let mut plain = self.crypt_buf.plain.borrow_mut();
-            self.block_log.read(pos, cipher.as_mut())?;
-            Aead::new().decrypt(cipher.as_slice(), key, iv, &[], mac, plain.as_mut_slice())?;
-            Arc::new(MhtNode::from_bytes(plain.as_slice()))
-        };
+        let mut cipher = self.crypt_buf.cipher.borrow_mut();
+        let mut plain = self.crypt_buf.plain.borrow_mut();
+        self.block_log.read(pos, cipher.as_mut())?;
+        Aead::new().decrypt(cipher.as_slice(), key, iv, &[], mac, plain.as_mut_slice())?;
+
+        let mht_node = Arc::<MhtNode>::new_uninit();
+        // SAFETY: `mht_node` will be initialized right below.
+        let mut mht_node = unsafe { mht_node.assume_init() };
+        let node_ref = Arc::get_mut(&mut mht_node).unwrap();
+        let copy_len = node_ref.as_bytes().len();
+        node_ref
+            .as_bytes_mut()
+            .copy_from_slice(&plain.as_slice()[..copy_len]);
 
         self.node_cache.put(pos, mht_node.clone());
         Ok(mht_node)
@@ -725,14 +732,19 @@ impl LevelBuilder {
                 break;
             }
 
-            let new_mht_node = Arc::new(MhtNode {
-                header: MhtNodeHeader {
-                    height: self.height,
-                    num_data_nodes: MhtNode::max_num_data_nodes(self.height) as _,
-                    num_valid_entries: MHT_NBRANCHES as _,
-                },
-                entries: array_init::array_init(|i| *entries_per_node[i]),
-            });
+            let new_mht_node = Arc::<MhtNode>::new_uninit();
+            // SAFETY: `new_mht_node` will be initialized right below.
+            let mut new_mht_node = unsafe { new_mht_node.assume_init() };
+            let node_ref = Arc::get_mut(&mut new_mht_node).unwrap();
+            (*node_ref).header = MhtNodeHeader {
+                height: self.height,
+                num_data_nodes: MhtNode::max_num_data_nodes(self.height) as _,
+                num_valid_entries: MHT_NBRANCHES as _,
+            };
+            for (i, entry) in (*node_ref).entries.iter_mut().enumerate() {
+                *entry = *entries_per_node[i];
+            }
+
             new_mht_nodes.push(new_mht_node);
         }
         new_mht_nodes
@@ -752,21 +764,24 @@ impl LevelBuilder {
         };
         let num_valid_entries = entries.len();
 
-        let last_mht_node = Arc::new(MhtNode {
-            header: MhtNodeHeader {
-                height: self.height,
-                num_data_nodes: num_data_nodes as _,
-                num_valid_entries: num_valid_entries as _,
-            },
-            entries: array_init::array_init(|i| {
-                if i < num_valid_entries {
-                    *entries[i]
-                } else {
-                    // Padding invalid entries to the rest
-                    MhtNodeEntry::new_uninit()
-                }
-            }),
-        });
+        let last_mht_node = Arc::<MhtNode>::new_uninit();
+        // SAFETY: `last_mht_node` will be initialized right below.
+        let mut last_mht_node = unsafe { last_mht_node.assume_init() };
+        let node_ref = Arc::get_mut(&mut last_mht_node).unwrap();
+        (*node_ref).header = MhtNodeHeader {
+            height: self.height,
+            num_data_nodes: num_data_nodes as _,
+            num_valid_entries: num_valid_entries as _,
+        };
+        for (i, entry) in (*node_ref).entries.iter_mut().enumerate() {
+            *entry = if i < num_valid_entries {
+                *entries[i]
+            } else {
+                // Padding invalid entries to the rest
+                MhtNodeEntry::new_uninit()
+            }
+        }
+
         last_mht_node
     }
 }

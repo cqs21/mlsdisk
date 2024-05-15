@@ -120,7 +120,13 @@ impl DataBlock {
     /// Create a new data block from the given `buf`.
     pub fn from_buf(buf: BufRef) -> Arc<Self> {
         debug_assert_eq!(buf.nblocks(), 1);
-        Arc::new(DataBlock(buf.as_slice().try_into().unwrap()))
+        let data_block = Arc::<DataBlock>::new_uninit();
+        // SAFETY: `data_block` will be initialized right below.
+        let mut data_block = unsafe { data_block.assume_init() };
+        let block_ref = Arc::get_mut(&mut data_block).unwrap();
+        block_ref.0.copy_from_slice(buf.as_slice());
+
+        data_block
     }
 
     /// Return the immutable slice of the data block.
