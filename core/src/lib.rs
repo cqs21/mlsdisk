@@ -10,7 +10,6 @@
 #![feature(let_chains)]
 #![feature(negative_impls)]
 #![feature(new_uninit)]
-#![feature(receiver_trait)]
 #![feature(sized_type_properties)]
 #![feature(slice_concat_trait)]
 #![feature(slice_group_by)]

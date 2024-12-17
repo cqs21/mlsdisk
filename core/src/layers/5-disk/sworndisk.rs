@@ -332,7 +332,7 @@ impl<D: BlockSet + 'static> DiskInner<D> {
         let mut res = range_query_ctx.into_results();
         let record_batches = {
             res.sort_by(|(_, v1), (_, v2)| v1.hba.cmp(&v2.hba));
-            res.group_by(|(_, v1), (_, v2)| v2.hba - v1.hba == 1)
+            res.chunk_by(|(_, v1), (_, v2)| v2.hba - v1.hba == 1)
         };
 
         // Perform disk read in batches and decryption
@@ -412,7 +412,7 @@ impl<D: BlockSet + 'static> DiskInner<D> {
             .block_validity_table
             .alloc_batch(NonZeroUsize::new(num_write).unwrap())?;
         debug_assert_eq!(hbas.len(), num_write);
-        let hba_batches = hbas.group_by(|hba1, hba2| hba2 - hba1 == 1);
+        let hba_batches = hbas.chunk_by(|hba1, hba2| hba2 - hba1 == 1);
 
         // Perform encryption and batch disk write
         let mut cipher_buf = Buf::alloc(num_write)?;

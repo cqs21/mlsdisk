@@ -7,6 +7,7 @@ use crate::layers::log::{TxLog, TxLogId, TxLogStore};
 use crate::os::Mutex;
 use crate::prelude::*;
 
+use alloc::vec;
 use core::marker::PhantomData;
 use core::mem::size_of;
 use core::num::NonZeroUsize;

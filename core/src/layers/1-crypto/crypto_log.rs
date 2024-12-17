@@ -3,6 +3,7 @@ use crate::layers::bio::{BlockId, BlockLog, Buf, BufMut, BufRef, BLOCK_SIZE};
 use crate::os::{Aead, HashMap, RwLock};
 use crate::prelude::*;
 
+use alloc::vec;
 use core::any::Any;
 use core::cell::RefCell;
 use core::mem::size_of;

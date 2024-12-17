@@ -16,6 +16,7 @@ use crate::os::{spawn, BTreeMap, RwLock};
 use crate::prelude::*;
 use crate::tx::Tx;
 
+use alloc::vec;
 use core::hash::Hash;
 use core::ops::{Add, RangeInclusive, Sub};
 use core::sync::atomic::{AtomicU64, Ordering};

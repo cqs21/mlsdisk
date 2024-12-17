@@ -614,7 +614,7 @@ impl<'a> RawLogHeadRef<'a> {
         // Batch read
         // Note that `prepared_blocks` are not always sorted
         let mut offset = 0;
-        for consecutive_blocks in prepared_blocks.group_by(|b1, b2| b2.saturating_sub(*b1) == 1) {
+        for consecutive_blocks in prepared_blocks.chunk_by(|b1, b2| b2.saturating_sub(*b1) == 1) {
             let len = consecutive_blocks.len();
             let first_bid = *consecutive_blocks.first().unwrap();
             let buf_slice =
@@ -690,7 +690,7 @@ impl<'a> RawLogTailRef<'a> {
         // Batch read
         // Note that `prepared_blocks` are not always sorted
         let mut offset = 0;
-        for consecutive_blocks in prepared_blocks.group_by(|b1, b2| b2.saturating_sub(*b1) == 1) {
+        for consecutive_blocks in prepared_blocks.chunk_by(|b1, b2| b2.saturating_sub(*b1) == 1) {
             let len = consecutive_blocks.len();
             let first_bid = *consecutive_blocks.first().unwrap();
             let buf_slice =
@@ -711,7 +711,7 @@ impl<'a> RawLogTailRef<'a> {
         // Batch write
         // Note that `prepared_blocks` are not always sorted
         let mut offset = 0;
-        for consecutive_blocks in prepared_blocks.group_by(|b1, b2| b2.saturating_sub(*b1) == 1) {
+        for consecutive_blocks in prepared_blocks.chunk_by(|b1, b2| b2.saturating_sub(*b1) == 1) {
             let len = consecutive_blocks.len();
             let first_bid = *consecutive_blocks.first().unwrap();
             let buf_slice = &buf.as_slice()[offset * BLOCK_SIZE..(offset + len) * BLOCK_SIZE];

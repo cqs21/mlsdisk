@@ -6,6 +6,7 @@ use crate::os::{BTreeMap, Condvar, CvarMutex, Mutex};
 use crate::prelude::*;
 use crate::util::BitMap;
 
+use alloc::vec;
 use core::mem::size_of;
 use core::num::NonZeroUsize;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};

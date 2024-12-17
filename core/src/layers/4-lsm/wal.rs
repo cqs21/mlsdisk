@@ -6,6 +6,7 @@ use crate::os::Mutex;
 use crate::prelude::*;
 use crate::tx::Tx;
 
+use alloc::vec;
 use core::cell::{RefCell, RefMut};
 use core::fmt::Debug;
 use core::mem::size_of;
